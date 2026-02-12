@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>自社分析アンケート集計ツール</title>
+    <!-- Tailwind CSS (デザイン用) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js (グラフ用) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap');
+        body { font-family: 'Noto Sans JP', sans-serif; }
+        /* ヘッダー被り対策 */
+        html { scroll-padding-top: 120px; }
+        .radio-group input:checked + label {
+            background-color: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
+        }
+        @media print {
+            .no-print { display: none; }
+            .print-break { page-break-before: always; }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 min-h-screen">
+
+    <!-- Header -->
+    <header class="bg-white shadow-sm sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+            <h1 class="text-xl font-bold text-blue-600 flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+                自社分析アンケート集計
+            </h1>
+            <div class="space-x-2 no-print">
+                <button onclick="switchTab('input')" id="tab-input" class="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition">回答入力</button>
+                <button onclick="switchTab('dashboard')" id="tab-dashboard" class="px-4 py-2 rounded-lg bg-gray-200 text-gray-700 text-sm font-medium hover:bg-gray-300 transition">集計結果</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Content Wrapper -->
+    <main class="max-w-7xl mx-auto px-4 py-8">
+
+        <!-- TAB: Input Form -->
+        <div id="view-input" class="block">
+            <div class="max-w-3xl mx-auto">
+                <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+                    <div class="mb-6">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">回答者名（またはID）</label>
+                        <input type="text" id="respondentName" placeholder="例: 営業部 Aさん" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition">
+                    </div>
+                    <p class="text-sm text-gray-500 mb-4">各項目について、1（そう思わない）〜 5（非常にそう思う）で回答してください。</p>
+                </div>
+
+                <form id="surveyForm" onsubmit="handleFormSubmit(event)" novalidate>
+                    <div id="questions-container" class="space-y-6"></div>
+
+                    <div class="mt-8 flex justify-center pb-12">
+                        <button type="submit" class="px-8 py-3 bg-blue-600 text-white font-bold rounded-xl shadow-lg hover:bg-blue-700 transform hover:-translate-y-0.5 transition duration-200">
+                            回答を登録する
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- TAB: Dashboard -->
+        <div id="view-dashboard" class="hidden">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                
+                <!-- Chart Area -->
+                <div class="lg:col-span-1">
+                    <div class="bg-white rounded-xl shadow-lg p-6 sticky top-24">
+                        <h2 class="text-lg font-bold text-gray-800 mb-4 text-center">総合レーダーチャート</h2>
+                        <div class="aspect-square relative">
+                            <canvas id="radarChart"></canvas>
+                        </div>
+                        <div class="mt-4 text-center">
+                            <p class="text-sm text-gray-500">全回答者のカテゴリ別平均点</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stats & Data List -->
+                <div class="lg:col-span-2 space-y-6">
+                    
+                    <!-- Summary Cards -->
+                    <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+                        <div class="bg-white p-4 rounded-xl shadow border-l-4 border-blue-500">
+                            <div class="text-xs text-gray-500 font-bold">A. 事業・戦略</div>
+                            <div class="text-2xl font-bold text-gray-800" id="avg-A">-</div>
+                        </div>
+                        <div class="bg-white p-4 rounded-xl shadow border-l-4 border-green-500">
+                            <div class="text-xs text-gray-500 font-bold">B. 顧客・市場</div>
+                            <div class="text-2xl font-bold text-gray-800" id="avg-B">-</div>
+                        </div>
+                        <div class="bg-white p-4 rounded-xl shadow border-l-4 border-yellow-500">
+                            <div class="text-xs text-gray-500 font-bold">C. 組織・風土</div>
+                            <div class="text-2xl font-bold text-gray-800" id="avg-C">-</div>
+                        </div>
+                        <div class="bg-white p-4 rounded-xl shadow border-l-4 border-purple-500">
+                            <div class="text-xs text-gray-500 font-bold">D. 人材・働きがい</div>
+                            <div class="text-2xl font-bold text-gray-800" id="avg-D">-</div>
+                        </div>
+                        <div class="bg-white p-4 rounded-xl shadow border-l-4 border-pink-500">
+                            <div class="text-xs text-gray-500 font-bold">E. 技術・革新</div>
+                            <div class="text-2xl font-bold text-gray-800" id="avg-E">-</div>
+                        </div>
+                    </div>
+
+                    <!-- Analysis: Strengths and Challenges -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <!-- Strengths -->
+                        <div class="bg-blue-50 rounded-xl p-5 border border-blue-100 shadow-sm">
+                            <h3 class="flex items-center gap-2 text-blue-700 font-bold mb-4">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5 2a1 1 0 011 1v1h1a1 1 0 010 2H6v1a1 1 0 01-2 0V6H3a1 1 0 010-2h1V3a1 1 0 011-1zm0 10a1 1 0 011 1v1h1a1 1 0 110 2H6v1a1 1 0 11-2 0v-1H3a1 1 0 110-2h1v-1a1 1 0 011-1zM11 2a1 1 0 011-1.5 7 7 0 0110 8.22m-4.9 4.41a.5.5 0 01.78 0l.54.72a.5.5 0 00.82 0l.54-.72a.5.5 0 01.78 0l.54.72a.5.5 0 00.82 0l.54-.72a.5.5 0 01.78 0l.54.72a.5.5 0 00.82 0l.54-.72a.5.5 0 01.4-.2h.1a.5.5 0 000-1h-.1a.5.5 0 01-.4-.2l-.54-.72a.5.5 0 00-.82 0l-.54.72a.5.5 0 01-.78 0l-.54-.72a.5.5 0 00-.82 0l-.54.72a.5.5 0 01-.78 0l-.54-.72a.5.5 0 00-.82 0l-.54.72a.5.5 0 01-.78 0l-.54-.72a.5.5 0 00-.82 0l-.54.72a.5.5 0 01-.4.2h-.1a.5.5 0 000 1h.1a.5.5 0 01.4.2z" clip-rule="evenodd" /></svg>
+                                我々の強み (Top 3)
+                            </h3>
+                            <ul id="strength-list" class="space-y-3">
+                                <li class="text-sm text-gray-400 italic">データが不足しています</li>
+                            </ul>
+                        </div>
+                        <!-- Challenges -->
+                        <div class="bg-red-50 rounded-xl p-5 border border-red-100 shadow-sm">
+                            <h3 class="flex items-center gap-2 text-red-700 font-bold mb-4">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
+                                これからの課題 (Bottom 3)
+                            </h3>
+                            <ul id="challenge-list" class="space-y-3">
+                                <li class="text-sm text-gray-400 italic">データが不足しています</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="flex flex-wrap gap-3 justify-end no-print">
+                        <button onclick="loadDemoData()" class="px-4 py-2 text-sm bg-gray-100 text-gray-600 rounded hover:bg-gray-200">デモデータ読込</button>
+                        <button onclick="downloadCSV()" class="px-4 py-2 text-sm bg-green-600 text-white rounded hover:bg-green-700 flex items-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                            CSV出力
+                        </button>
+                        <button onclick="clearAllData()" class="px-4 py-2 text-sm bg-red-100 text-red-600 rounded hover:bg-red-200">全データ削除</button>
+                    </div>
+
+                    <!-- Data Table -->
+                    <div class="bg-white rounded-xl shadow overflow-hidden">
+                        <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+                            <h3 class="font-bold text-gray-800">回答一覧 (<span id="response-count">0</span>件)</h3>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm text-left">
+                                <thead class="bg-gray-50 text-gray-600 font-medium">
+                                    <tr>
+                                        <th class="px-6 py-3">名前</th>
+                                        <th class="px-6 py-3 text-center">A</th>
+                                        <th class="px-6 py-3 text-center">B</th>
+                                        <th class="px-6 py-3 text-center">C</th>
+                                        <th class="px-6 py-3 text-center">D</th>
+                                        <th class="px-6 py-3 text-center">E</th>
+                                        <th class="px-6 py-3 text-right">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="dataTableBody" class="divide-y divide-gray-100">
+                                    <tr><td colspan="7" class="px-6 py-8 text-center text-gray-400">データがありません</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        const categories = [
+            { id: 'A', name: '事業・戦略', color: 'blue' },
+            { id: 'B', name: '顧客・市場', color: 'green' },
+            { id: 'C', name: '組織・風土', color: 'yellow' },
+            { id: 'D', name: '人材・働きがい', color: 'purple' },
+            { id: 'E', name: '技術・革新', color: 'pink' }
+        ];
+
+        const questions = [
+            { id: 'q-A-1', cat: 'A', text: '競合と比較して明確な「勝ち筋」や「強み」がある' },
+            { id: 'q-A-2', cat: 'A', text: 'ビジネスモデルは安定的で、利益が出やすい' },
+            { id: 'q-A-3', cat: 'A', text: '他社にはないユニークな技術やノウハウがある' },
+            { id: 'q-A-4', cat: 'A', text: '市場の変化に対して、素早く適応できている' },
+            { id: 'q-A-5', cat: 'A', text: '会社の将来の方向性にワクワクする・共感できる' },
+            { id: 'q-B-1', cat: 'B', text: '業界内で知名度がある、または評判が良い' },
+            { id: 'q-B-2', cat: 'B', text: '顧客からの信頼が厚く、ファンが多い' },
+            { id: 'q-B-3', cat: 'B', text: '顧客の要望を待つだけでなく、価値ある提案ができている' },
+            { id: 'q-B-4', cat: 'B', text: '自社の良さを、世の中に上手くアピールできている' },
+            { id: 'q-B-5', cat: 'B', text: '現場の顧客の声が、商品開発や経営に反映されている' },
+            { id: 'q-C-1', cat: 'C', text: '意思決定がスムーズで、無駄な待ち時間が少ない' },
+            { id: 'q-C-2', cat: 'C', text: '部署の壁がなく、協力しやすい雰囲気がある' },
+            { id: 'q-C-3', cat: 'C', text: '上司や同僚に反対意見や悪い報告も気兼ねなく言える' },
+            { id: 'q-C-4', cat: 'C', text: '減点主義ではなく、新しいことへの挑戦が評価される' },
+            { id: 'q-C-5', cat: 'C', text: 'ルールは守るが、過度な管理で業務を阻害していない' },
+            { id: 'q-D-1', cat: 'D', text: '周囲に尊敬できる社員や、優秀な同僚が多い' },
+            { id: 'q-D-2', cat: 'D', text: '成果や実力が正当に評価され、処遇に反映されている' },
+            { id: 'q-D-3', cat: 'D', text: 'この会社での業務を通じて、市場価値の高いスキルがつく' },
+            { id: 'q-D-4', cat: 'D', text: '休暇の取りやすさなど、ワークライフバランスが良い' },
+            { id: 'q-D-5', cat: 'D', text: '経営層や上司は現場を理解し、適切なリーダーシップがある' },
+            { id: 'q-E-1', cat: 'E', text: '最新ツール導入などデジタル化が進み、業務効率が高い' },
+            { id: 'q-E-2', cat: 'E', text: '必要な設備や環境への投資をケチらずに行っている' },
+            { id: 'q-E-3', cat: 'E', text: '個人のノウハウが属人化せず、社内で共有されている' },
+            { id: 'q-E-4', cat: 'E', text: '既存事業だけでなく、新規事業への種まきも積極的だ' },
+            { id: 'q-E-5', cat: 'E', text: 'AIなどの新技術を業務に取り入れようとする姿勢がある' }
+        ];
+
+        let responses = JSON.parse(localStorage.getItem('surveyResponses')) || [];
+        let radarChart = null;
+
+        window.onload = () => {
+            renderQuestions();
+            updateDashboard();
+        };
+
+        function renderQuestions() {
+            const container = document.getElementById('questions-container');
+            let currentCat = '';
+            
+            questions.forEach((q) => {
+                if (q.cat !== currentCat) {
+                    currentCat = q.cat;
+                    const catInfo = categories.find(c => c.id === currentCat);
+                    const header = document.createElement('div');
+                    header.className = `mt-8 mb-4 pb-2 border-b-2 border-${catInfo.color}-500`;
+                    header.innerHTML = `<h3 class="text-lg font-bold text-gray-800">${catInfo.id}. ${catInfo.name}</h3>`;
+                    container.appendChild(header);
+                }
+
+                const card = document.createElement('div');
+                card.className = "bg-white p-4 rounded-lg shadow-sm border border-gray-100 hover:shadow-md transition";
+                card.innerHTML = `
+                    <div class="mb-3 font-medium text-gray-700">${q.text}</div>
+                    <div class="flex justify-between items-center max-w-md mx-auto radio-group">
+                        ${[1,2,3,4,5].map(val => `
+                            <div class="flex flex-col items-center">
+                                <input type="radio" id="${q.id}-${val}" name="${q.id}" value="${val}" class="hidden peer" required>
+                                <label for="${q.id}-${val}" class="w-10 h-10 flex items-center justify-center rounded-full border border-gray-300 text-gray-500 font-bold cursor-pointer transition hover:bg-blue-50 hover:text-blue-600 peer-checked:bg-blue-600 peer-checked:text-white peer-checked:border-blue-600 shadow-sm">
+                                    ${val}
+                                </label>
+                                <span class="text-[10px] text-gray-400 mt-1">${val===1?'低':(val===5?'高':'')}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function switchTab(tabName) {
+            document.getElementById('view-input').classList.add('hidden');
+            document.getElementById('view-dashboard').classList.add('hidden');
+            document.getElementById(`view-${tabName}`).classList.remove('hidden');
+
+            const btnInput = document.getElementById('tab-input');
+            const btnDash = document.getElementById('tab-dashboard');
+
+            if(tabName === 'input'){
+                btnInput.className = "px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium transition";
+                btnDash.className = "px-4 py-2 rounded-lg bg-gray-200 text-gray-700 text-sm font-medium hover:bg-gray-300 transition";
+                window.scrollTo(0,0);
+            } else {
+                btnInput.className = "px-4 py-2 rounded-lg bg-gray-200 text-gray-700 text-sm font-medium hover:bg-gray-300 transition";
+                btnDash.className = "px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium transition";
+                updateDashboard();
+            }
+        }
+
+        function handleFormSubmit(e) {
+            e.preventDefault();
+            const form = e.target;
+            const invalidItem = questions.find(q => !form.querySelector(`input[name="${q.id}"]:checked`));
+            
+            if (invalidItem) {
+                alert('未回答の項目があります。\n未入力の箇所へ移動します。');
+                const inputEl = form.querySelector(`input[name="${invalidItem.id}"]`);
+                if (inputEl) {
+                    const card = inputEl.closest('.bg-white');
+                    if (card) {
+                        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        card.classList.add('ring-4', 'ring-red-500');
+                        setTimeout(() => card.classList.remove('ring-4', 'ring-red-500'), 2000);
+                    }
+                }
+                return;
+            }
+
+            const formData = new FormData(e.target);
+            const rawData = {};
+            const scores = { A:0, B:0, C:0, D:0, E:0 };
+            
+            for (let [key, value] of formData.entries()) {
+                if (key.startsWith('q-')) {
+                    const cat = key.split('-')[1];
+                    const val = parseInt(value);
+                    rawData[key] = val;
+                    scores[cat] += val;
+                }
+            }
+
+            const averages = {};
+            categories.forEach(c => averages[c.id] = scores[c.id] / 5);
+
+            const nameInput = document.getElementById('respondentName');
+            const name = nameInput.value.trim() || `回答者 ${responses.length + 1}`;
+
+            const newResponse = {
+                id: Date.now(),
+                timestamp: new Date().toISOString(),
+                name: name,
+                rawData: rawData,
+                averages: averages
+            };
+
+            responses.push(newResponse);
+            saveData();
+            e.target.reset();
+            nameInput.value = '';
+            window.scrollTo(0,0);
+            alert('回答を保存しました');
+            switchTab('dashboard');
+        }
+
+        function updateDashboard() {
+            if (responses.length === 0) {
+                drawChart({A:0,B:0,C:0,D:0,E:0});
+                renderAnalysis([], []);
+                return;
+            }
+
+            // Category Averages
+            const sums = { A:0, B:0, C:0, D:0, E:0 };
+            responses.forEach(r => {
+                categories.forEach(c => sums[c.id] += r.averages[c.id]);
+            });
+            const overall = {};
+            categories.forEach(c => {
+                overall[c.id] = (sums[c.id] / responses.length).toFixed(1);
+                document.getElementById(`avg-${c.id}`).textContent = overall[c.id];
+            });
+
+            // Individual Question Averages for Strength/Challenge
+            const questionStats = questions.map(q => {
+                const qSum = responses.reduce((acc, r) => acc + (r.rawData[q.id] || 0), 0);
+                return {
+                    text: q.text,
+                    cat: q.cat,
+                    avg: qSum / responses.length
+                };
+            });
+
+            // Sort for Analysis
+            const sortedQuestions = [...questionStats].sort((a, b) => b.avg - a.avg);
+            const strengths = sortedQuestions.slice(0, 3);
+            const challenges = sortedQuestions.reverse().slice(0, 3);
+
+            renderAnalysis(strengths, challenges);
+
+            // Table update
+            const tbody = document.getElementById('dataTableBody');
+            tbody.innerHTML = '';
+            responses.forEach((r) => {
+                const tr = document.createElement('tr');
+                tr.className = "bg-white hover:bg-gray-50 border-b border-gray-100 last:border-b-0";
+                tr.innerHTML = `
+                    <td class="px-6 py-3 font-medium text-gray-800">${r.name}</td>
+                    <td class="px-6 py-3 text-center text-gray-600">${r.averages.A.toFixed(1)}</td>
+                    <td class="px-6 py-3 text-center text-gray-600">${r.averages.B.toFixed(1)}</td>
+                    <td class="px-6 py-3 text-center text-gray-600">${r.averages.C.toFixed(1)}</td>
+                    <td class="px-6 py-3 text-center text-gray-600">${r.averages.D.toFixed(1)}</td>
+                    <td class="px-6 py-3 text-center text-gray-600">${r.averages.E.toFixed(1)}</td>
+                    <td class="px-6 py-3 text-right"><button onclick="deleteResponse(${r.id})" class="text-xs text-red-500 hover:text-red-700">削除</button></td>
+                `;
+                tbody.appendChild(tr);
+            });
+            document.getElementById('response-count').textContent = responses.length;
+
+            drawChart(overall);
+        }
+
+        function renderAnalysis(strengths, challenges) {
+            const sList = document.getElementById('strength-list');
+            const cList = document.getElementById('challenge-list');
+            
+            if (strengths.length === 0) {
+                sList.innerHTML = '<li class="text-sm text-gray-400 italic">データが不足しています</li>';
+                cList.innerHTML = '<li class="text-sm text-gray-400 italic">データが不足しています</li>';
+                return;
+            }
+
+            sList.innerHTML = strengths.map((s, i) => `
+                <li class="flex items-start gap-3 bg-white p-3 rounded shadow-sm border-l-4 border-blue-400">
+                    <span class="flex-shrink-0 w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-xs">${i+1}</span>
+                    <div class="flex-grow">
+                        <div class="text-xs font-bold text-blue-500 mb-1">${categories.find(c=>c.id===s.cat).name}</div>
+                        <div class="text-sm text-gray-700 leading-tight">${s.text}</div>
+                        <div class="text-xs text-gray-400 mt-1">平均点: ${s.avg.toFixed(1)}</div>
+                    </div>
+                </li>
+            `).join('');
+
+            cList.innerHTML = challenges.map((s, i) => `
+                <li class="flex items-start gap-3 bg-white p-3 rounded shadow-sm border-l-4 border-red-400">
+                    <span class="flex-shrink-0 w-6 h-6 rounded-full bg-red-100 text-red-600 flex items-center justify-center font-bold text-xs">${i+1}</span>
+                    <div class="flex-grow">
+                        <div class="text-xs font-bold text-red-500 mb-1">${categories.find(c=>c.id===s.cat).name}</div>
+                        <div class="text-sm text-gray-700 leading-tight">${s.text}</div>
+                        <div class="text-xs text-gray-400 mt-1">平均点: ${s.avg.toFixed(1)}</div>
+                    </div>
+                </li>
+            `).join('');
+        }
+
+        function drawChart(dataObj) {
+            const ctx = document.getElementById('radarChart').getContext('2d');
+            if (radarChart) radarChart.destroy();
+            radarChart = new Chart(ctx, {
+                type: 'radar',
+                data: {
+                    labels: categories.map(c => `${c.id}. ${c.name}`),
+                    datasets: [{
+                        label: '全体平均',
+                        data: [dataObj.A, dataObj.B, dataObj.C, dataObj.D, dataObj.E],
+                        backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                        borderColor: 'rgba(59, 130, 246, 1)',
+                        pointBackgroundColor: 'rgba(59, 130, 246, 1)',
+                        borderWidth: 2,
+                        pointRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: { r: { min: 0, max: 5, ticks: { stepSize: 1, backdropColor: 'transparent' }, pointLabels: { font: { size: 11, family: "'Noto Sans JP', sans-serif", weight: 'bold' }, color: '#374151' } } },
+                    plugins: { legend: { display: false } }
+                }
+            });
+        }
+
+        function saveData() { localStorage.setItem('surveyResponses', JSON.stringify(responses)); }
+
+        function deleteResponse(id) {
+            if(confirm('この回答データを削除しますか？')) {
+                responses = responses.filter(r => r.id !== id);
+                saveData();
+                updateDashboard();
+            }
+        }
+
+        function clearAllData() {
+            if(confirm('全てのデータを削除しますか？この操作は取り消せません。')) {
+                responses = [];
+                saveData();
+                updateDashboard();
+            }
+        }
+
+        function downloadCSV() {
+            if (responses.length === 0) return alert('データがありません');
+            let csvContent = "\uFEFFID,回答者名,回答日時,";
+            categories.forEach(c => csvContent += `平均_${c.name},`);
+            questions.forEach(q => csvContent += `${q.id}_${q.text},`);
+            csvContent += "\n";
+            responses.forEach(r => {
+                csvContent += `${r.id},"${r.name}",${new Date(r.timestamp).toLocaleString()},`;
+                categories.forEach(c => csvContent += `${r.averages[c.id].toFixed(2)},`);
+                questions.forEach(q => csvContent += `${r.rawData[q.id] || ''},`);
+                csvContent += "\n";
+            });
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            link.setAttribute("href", URL.createObjectURL(blob));
+            link.setAttribute("download", `survey_${new Date().toISOString().slice(0,10)}.csv`);
+            link.click();
+        }
+
+        function loadDemoData() {
+            if (!confirm('3件のサンプルデータを読み込みますか？')) return;
+            const demoNames = ['山田 太郎', '鈴木 花子', '佐藤 一郎'];
+            demoNames.forEach((name, i) => {
+                const rawData = {};
+                const scores = { A:0, B:0, C:0, D:0, E:0 };
+                questions.forEach(q => {
+                    let val = Math.floor(Math.random() * 3) + 2; 
+                    if (i===0 && q.cat === 'A') val = 5;
+                    if (i===1 && q.cat === 'C') val = 1; // Suzuki low in C for contrast
+                    rawData[q.id] = val;
+                    scores[q.cat] += val;
+                });
+                const averages = {};
+                categories.forEach(c => averages[c.id] = scores[c.id] / 5);
+                responses.push({ id: Date.now() + i, timestamp: new Date().toISOString(), name: name, rawData: rawData, averages: averages });
+            });
+            saveData();
+            updateDashboard();
+            switchTab('dashboard');
+        }
+    </script>
+</body>
+</html>
